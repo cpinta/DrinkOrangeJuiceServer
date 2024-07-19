@@ -10,15 +10,92 @@ using System.Reflection.Emit;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json;
 
 namespace DrinkOrangeJuiceServer
 {
+    class ClientInfo
+    {
+        int[] drinksSeen = new int[0];
+        int highScore = 0;
+        int currentScore = 0;
+        public ClientInfo() { }
+
+        void IncreaseScore()
+        {
+            currentScore++;
+        }
+
+        public int getScore()
+        {
+            return currentScore;
+        }
+        public int getHighscore()
+        {
+            return highScore;
+        }
+
+        void AddDrinkToList(int index)
+        {
+            List<int> list = drinksSeen.ToList();
+            list.Add(index);
+            drinksSeen = list.ToArray();
+        }
+        bool HasSeenDrink(int index)
+        {
+            if (drinksSeen.Contains(index))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        public int NextDrink(int drinkListLength)
+        {
+            Random rand = new Random();
+            var range = Enumerable.Range(1, drinkListLength).Where(i => !drinksSeen.Contains(i));
+            int index = rand.Next(0, drinkListLength - drinksSeen.Length);
+            int actualIndex = range.ElementAt(index);
+
+            AddDrinkToList(actualIndex);
+            IncreaseScore();
+            return actualIndex;
+        }
+        // returns true if its a new highscore
+        public bool Restart()
+        {
+            if(currentScore > highScore)
+            {
+                highScore = currentScore;
+                currentScore = 0;
+                return true;
+            }
+            else
+            {
+                currentScore = 0;
+                return false;
+            }
+        }
+    }
+
+    public class Drink
+    {
+        public string title;
+        public string link;
+        public string image_url;
+        public string summary;
+        public List<string> categories;
+    }
+
     class Program
     {
         static string ip = "127.0.0.1";
         static int port = 80;
+        static string drinkFileName = "filteredlist09124.json";
 
         private static List<Socket> clients = new List<Socket>();
+        public static Drink[] drinks;
+        static Dictionary<Socket, ClientInfo> dictSocketClientInfos = new Dictionary<Socket, ClientInfo>();
         private static TcpListener server = new TcpListener(
             IPAddress.Parse(ip),
             port
@@ -27,6 +104,12 @@ namespace DrinkOrangeJuiceServer
         public static void Main()
         {
             server.Start();
+            string workingDirectory = Environment.CurrentDirectory;
+            string projectDirectory = Directory.GetParent(workingDirectory).Parent.Parent.FullName;
+
+            string jsonString = File.ReadAllText(projectDirectory + "\\" + drinkFileName);
+            drinks = JsonConvert.DeserializeObject<Drink[]>(jsonString);
+
             Console.WriteLine("Server has started on {0}:{1}, Waiting for a connection…", ip, port);
             while (true)
             {
@@ -34,8 +117,9 @@ namespace DrinkOrangeJuiceServer
                 if (client.Connected)
                 {
                     clients.Add(client);
-                    Thread nuevoHilo = new Thread(() => Listeners(client));
-                    nuevoHilo.Start();
+                    dictSocketClientInfos.Add(client, new ClientInfo());
+                    Thread newThread = new Thread(() => Listeners(client));
+                    newThread.Start();
                 }
             }
         }
@@ -78,19 +162,24 @@ namespace DrinkOrangeJuiceServer
                 }
                 else
                 {
-                    var text = DecodeMessage(bytes);
+                    string text = DecodeMessage(bytes);
 
                     Console.WriteLine("{0}", text);
 
-                    var otherClients = clients.Where(
+                    List<Socket> otherClients = clients.Where(
                             c => c.RemoteEndPoint != client.RemoteEndPoint
                         ).ToList();
 
+                    if (text.StartsWith("dr:"))
+                    {
+                        dictSocketClientInfos[client].NextDrink(text[3]);
+                    }
+
                     if (otherClients.Count > 0)
                     {
-                        foreach (var cli in otherClients)
+                        foreach (Socket cli in otherClients)
                         {
-                            var sendMessage = EncodeMessageToSend(text);
+                            byte[] sendMessage = EncodeMessageToSend(text);
                             cli.Send(sendMessage);
                         }
                     }
@@ -99,7 +188,6 @@ namespace DrinkOrangeJuiceServer
                 }
             }
         }
-
         private static string DecodeMessage(byte[] bytes)
         {
             var secondByte = bytes[1];
@@ -121,7 +209,6 @@ namespace DrinkOrangeJuiceServer
 
             return Encoding.UTF8.GetString(decoded, 0, decoded.Length);
         }
-
         private static byte[] EncodeMessageToSend(string message)
         {
             byte[] response;
