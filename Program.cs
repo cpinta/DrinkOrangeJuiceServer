@@ -11,6 +11,7 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json;
+using System.Reflection;
 
 namespace DrinkOrangeJuiceServer
 {
@@ -33,6 +34,11 @@ namespace DrinkOrangeJuiceServer
         public int getHighscore()
         {
             return highScore;
+        }
+
+        public int getCurrentDrinkIndex()
+        {
+            return drinksSeen[drinksSeen.Length - 1];
         }
 
         void AddDrinkToList(int index)
@@ -166,28 +172,50 @@ namespace DrinkOrangeJuiceServer
 
                     Console.WriteLine("{0}", text);
 
-                    List<Socket> otherClients = clients.Where(
-                            c => c.RemoteEndPoint != client.RemoteEndPoint
-                        ).ToList();
+                    //List<Socket> otherClients = clients.Where(
+                    //        c => c.RemoteEndPoint != client.RemoteEndPoint
+                    //    ).ToList();
 
-                    if (text.StartsWith("dr:"))
+                    if (text == "gimme a funny drink")
                     {
-                        dictSocketClientInfos[client].NextDrink(text[3]);
+                        int index = dictSocketClientInfos[client].NextDrink(drinks.Length);
+                        byte[] message = EncodeMessageToSend(JsonConvert.SerializeObject(drinks[index]));
+                        client.Send(message);
+                    }
+                    else if(text == "this isnt a drink")
+                    {
+                        int index = dictSocketClientInfos[client].getCurrentDrinkIndex();
+                        List<Drink> list = drinks.ToList();
+                        list.RemoveAt(index);
+                        drinks = list.ToArray();
+
+                        SaveDrinks();
                     }
 
-                    if (otherClients.Count > 0)
-                    {
-                        foreach (Socket cli in otherClients)
-                        {
-                            byte[] sendMessage = EncodeMessageToSend(text);
-                            cli.Send(sendMessage);
-                        }
-                    }
+                    //if (otherClients.Count > 0)
+                    //{
+                    //    foreach (Socket cli in otherClients)
+                    //    {
+                    //        byte[] sendMessage = EncodeMessageToSend(text);
+                    //        cli.Send(sendMessage);
+                    //    }
+                    //}
 
                     Console.WriteLine();
                 }
             }
         }
+
+        private static void SaveDrinks()
+        {
+            string jsonString = JsonConvert.SerializeObject(drinks);
+
+            string workingDirectory = Environment.CurrentDirectory;
+            string projectDirectory = Directory.GetParent(workingDirectory).Parent.Parent.FullName;
+
+            File.WriteAllText(projectDirectory + "\\" + drinkFileName, jsonString);
+        }
+
         private static string DecodeMessage(byte[] bytes)
         {
             var secondByte = bytes[1];
