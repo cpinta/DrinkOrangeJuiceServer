@@ -15,6 +15,17 @@ using System.Reflection;
 
 namespace DrinkOrangeJuiceServer
 {
+    class WinningInfo
+    {
+        public int score = 0;
+        public string type = "winningInfo";
+
+        public WinningInfo(int score)
+        {
+            this.score = score;
+        }
+    }
+
     class ClientInfo
     {
         int[] drinksSeen = new int[0];
@@ -38,10 +49,14 @@ namespace DrinkOrangeJuiceServer
 
         public int getCurrentDrinkIndex()
         {
-            return drinksSeen[drinksSeen.Length - 1];
+            if(drinksSeen.Length > 0)
+            {
+                return drinksSeen[drinksSeen.Length - 1];
+            }
+            return -1;
         }
 
-        void AddDrinkToList(int index)
+        public void AddDrinkToList(int index)
         {
             List<int> list = drinksSeen.ToList();
             list.Add(index);
@@ -91,6 +106,7 @@ namespace DrinkOrangeJuiceServer
         public string image_url;
         public string summary;
         public List<string> categories;
+        public string type = "drink";
     }
 
     class Program
@@ -98,10 +114,11 @@ namespace DrinkOrangeJuiceServer
         static string ip = "127.0.0.1";
         static int port = 80;
         static string drinkFileName = "filteredlist09124.json";
+        static string needsPicFileName = "needspic.json";
 
         private static List<Socket> clients = new List<Socket>();
         public static Drink[] drinks;
-        static Dictionary<Socket, ClientInfo> dictSocketClientInfos = new Dictionary<Socket, ClientInfo>();
+        static Dictionary<Socket, ClientInfo> clientInfos = new Dictionary<Socket, ClientInfo>();
         private static TcpListener server = new TcpListener(
             IPAddress.Parse(ip),
             port
@@ -123,7 +140,7 @@ namespace DrinkOrangeJuiceServer
                 if (client.Connected)
                 {
                     clients.Add(client);
-                    dictSocketClientInfos.Add(client, new ClientInfo());
+                    clientInfos.Add(client, new ClientInfo());
                     Thread newThread = new Thread(() => Listeners(client));
                     newThread.Start();
                 }
@@ -178,19 +195,40 @@ namespace DrinkOrangeJuiceServer
 
                     if (text == "gimme a funny drink")
                     {
-                        int index = dictSocketClientInfos[client].NextDrink(drinks.Length);
-                        byte[] message = EncodeMessageToSend(JsonConvert.SerializeObject(drinks[index]));
-                        client.Send(message);
-                    }
-                    else if(text == "this isnt a drink")
-                    {
-                        int index = dictSocketClientInfos[client].getCurrentDrinkIndex();
-                        List<Drink> list = drinks.ToList();
-                        list.RemoveAt(index);
-                        drinks = list.ToArray();
+                        //int index = clientInfos[client].getCurrentDrinkIndex();
+                        Random rand = new Random();
+                        int index = rand.Next(0, drinks.Length);
 
-                        SaveDrinks();
+                        GetClientADrink(client, index);
                     }
+                    else if(text == "this is def oj")
+                    {
+                        int index = clientInfos[client].getCurrentDrinkIndex();
+                        string title = drinks[index].title;
+
+                        if(title == "Orange juice")
+                        {
+                            WinningInfo winningInfo = new WinningInfo(clientInfos[client].getScore());
+
+                            byte[] message = EncodeMessageToSend(JsonConvert.SerializeObject(winningInfo));
+                            client.Send(message);
+                        }
+                        else
+                        {
+                            clientInfos[client].Restart();
+                        }
+                    }
+                    //else if(text == "this isnt a drink")
+                    //{
+                    //    int index = dictSocketClientInfos[client].getCurrentDrinkIndex();
+                    //    RemoveDrinkByIndexAndSave(index);
+                    //    GetClientADrink(client, index);
+                    //}
+                    //else if(text == "this needs a new pic")
+                    //{
+                    //    int index = dictSocketClientInfos[client].getCurrentDrinkIndex();
+                    //    AddDrinkToNeedsPicFile(drinks[index].title);
+                    //}
 
                     //if (otherClients.Count > 0)
                     //{
@@ -206,6 +244,28 @@ namespace DrinkOrangeJuiceServer
             }
         }
 
+        static void RemoveDrinkByIndexAndSave(int index)
+        {
+            List<Drink> list = drinks.ToList();
+            list.RemoveAt(index);
+            drinks = list.ToArray();
+            SaveDrinks();
+        }
+
+        static void GetClientADrink(Socket client)
+        {
+            int index = clientInfos[client].NextDrink(drinks.Length);
+            GetClientADrink(client, index);
+        }
+
+        static void GetClientADrink(Socket client, int index)
+        {
+            clientInfos[client].AddDrinkToList(index);
+            byte[] message = EncodeMessageToSend(JsonConvert.SerializeObject(drinks[index]));
+            client.Send(message);
+
+        }
+
         private static void SaveDrinks()
         {
             string jsonString = JsonConvert.SerializeObject(drinks);
@@ -214,6 +274,17 @@ namespace DrinkOrangeJuiceServer
             string projectDirectory = Directory.GetParent(workingDirectory).Parent.Parent.FullName;
 
             File.WriteAllText(projectDirectory + "\\" + drinkFileName, jsonString);
+        }
+
+        private static void AddDrinkToNeedsPicFile(string name)
+        {
+            string workingDirectory = Environment.CurrentDirectory;
+            string projectDirectory = Directory.GetParent(workingDirectory).Parent.Parent.FullName;
+            string fileString = File.ReadAllText(projectDirectory + "\\" + needsPicFileName);
+
+            fileString += "\n" + name;
+
+            File.WriteAllText(projectDirectory + "\\" + needsPicFileName, fileString);
         }
 
         private static string DecodeMessage(byte[] bytes)
