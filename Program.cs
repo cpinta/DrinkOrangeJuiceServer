@@ -19,12 +19,26 @@ namespace DrinkOrangeJuiceServer
     {
         public int score = 0;
         public string type = "winningInfo";
+        public Rank rank;
 
-        public WinningInfo(int score)
+        public WinningInfo(int score, Rank rank)
         {
             this.score = score;
+            this.rank = rank;
         }
     }
+
+    class Rank
+    {
+        public int score = 0;
+        public string rankName = "";
+        public Rank(string rankName, int maxScore)
+        {
+            this.score = maxScore;
+            this.rankName = rankName;
+        }
+    }
+    
 
     class ClientInfo
     {
@@ -124,6 +138,21 @@ namespace DrinkOrangeJuiceServer
             port
         );
 
+        public static Rank[] ranks = new Rank[]
+        {
+            new Rank("Oh No J", 1600),
+            new Rank("Juice Rookie", 1400),
+            new Rank("OK OJ", 1200),
+            new Rank("Average Squeezer", 1000),
+            new Rank("OJ Guru", 800),
+            new Rank("Citrus Champ", 600),
+            new Rank("Super Sipper", 400),
+            new Rank("Pulp Paladin", 200),
+            new Rank("Vitamin C Virtuoso", 100),
+            new Rank("Masterful Mixer", 50),
+            new Rank("Sultan of Squeeze", 25)
+        };
+
         public static void Main()
         {
             server.Start();
@@ -196,8 +225,17 @@ namespace DrinkOrangeJuiceServer
                     if (text == "gimme a funny drink")
                     {
                         //int index = clientInfos[client].getCurrentDrinkIndex();
-                        Random rand = new Random();
-                        int index = rand.Next(0, drinks.Length);
+                        int index = 0;
+                        bool notValid = true;
+                        while (notValid)
+                        {
+                            Random rand = new Random();
+                            index = rand.Next(0, drinks.Length);
+                            if(drinks[index].image_url != null)
+                            {
+                                notValid = false;
+                            }
+                        }
 
                         GetClientADrink(client, index);
                     }
@@ -206,15 +244,33 @@ namespace DrinkOrangeJuiceServer
                         int index = clientInfos[client].getCurrentDrinkIndex();
                         string title = drinks[index].title;
 
-                        if(title == "Orange juice")
+                        if (title == "Orange juice")
                         {
-                            WinningInfo winningInfo = new WinningInfo(clientInfos[client].getScore());
+                            int score = clientInfos[client].getScore();
+
+                            Rank currentRank = ranks[0];
+
+                            for(int i = 0; i < ranks.Length-1; i++)
+                            {
+                                int rankIndex = ranks.Length - i;
+                                if (score <= ranks[rankIndex].score)
+                                {
+                                    currentRank = ranks[rankIndex];
+                                    break;
+                                }
+                            }
+
+                            WinningInfo winningInfo = new WinningInfo(clientInfos[client].getScore(), currentRank);
 
                             byte[] message = EncodeMessageToSend(JsonConvert.SerializeObject(winningInfo));
                             client.Send(message);
                         }
                         else
                         {
+                            WinningInfo winningInfo = new WinningInfo(-1, null);
+                            byte[] message = EncodeMessageToSend(JsonConvert.SerializeObject(winningInfo));
+                            client.Send(message);
+
                             clientInfos[client].Restart();
                         }
                     }
